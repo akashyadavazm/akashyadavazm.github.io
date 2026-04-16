@@ -1,10 +1,8 @@
-// Import Firebase SDKs from Google's CDN
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
-import { getFirestore, doc, setDoc, addDoc, updateDoc, collection, onSnapshot, serverTimestamp, runTransaction, increment } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, addDoc, updateDoc, collection, onSnapshot, serverTimestamp, runTransaction, increment, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-// Firebase Configuration
 const firebaseConfig = {
     apiKey: "AIzaSyDnSz2NJQZovT3WKjyak9IcVlfYbQBmlVM",
     authDomain: "chandan-saroj-portfolio.firebaseapp.com",
@@ -15,17 +13,13 @@ const firebaseConfig = {
     measurementId: "G-WVQXG2QM1T"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 const db = getFirestore(app);
 const auth = getAuth(app);
-
-// State Logic
 const root = document.documentElement;
-const saveBtn = document.getElementById('saveThemeBtn');
-const resetBtn = document.getElementById('resetThemeBtn');
+
 let currentUser = null;
+let loadedPosts = {};
 let currentTheme = { primary: '#00ff88', secondary: '#00ccff', font: "'Inter', sans-serif", mode: 'dark' };
 
 const themeModes = {
@@ -36,92 +30,185 @@ const themeModes = {
     'thematic': { '--dark': '#001a1a', '--darker': '#000d0d', '--card-bg': 'rgba(0, 40, 40, 0.6)', '--text-light': '#e0f7fa', '--text-gray': '#80deea', '--border': 'rgba(0, 255, 255, 0.15)' }
 };
 
-signInAnonymously(auth).catch((error) => console.error("Auth Error", error));
-
-let loadedPosts = {};
-
-function stripHtml(html) {
-   let tmp = document.createElement("DIV");
-   tmp.innerHTML = html;
-   return tmp.textContent || tmp.innerText || "";
-}
-
-// Weather Logic
-const DELHI_COORDS = { lat: 28.6139, lon: 77.2090 };
-async function fetchWeatherData(lat, lon) {
-    try {
-        const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`);
-        const aqiRes = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&timezone=auto`);
-        const weatherData = await weatherRes.json();
-        const aqiData = await aqiRes.json();
-        updateWeatherUI(weatherData, aqiData);
-    } catch (error) { console.error("Weather failed", error); }
-}
-
-function updateWeatherUI(weather, aqi) {
-     const temp = Math.round(weather.current.temperature_2m);
-     const code = weather.current.weather_code;
-     let icon = 'fa-sun'; let text = 'Clear';
-     if (code > 0 && code <= 3) { icon = 'fa-cloud-sun'; text = 'Cloudy'; }
-     document.getElementById('weatherTemp').innerHTML = `<i class="fas fa-thermometer-half"></i> <span>${temp}°C</span>`;
-     document.getElementById('weatherCondition').innerHTML = `<i class="fas ${icon}"></i> <span>${text}</span>`;
-     document.getElementById('weatherAQI').innerHTML = `<i class="fas fa-wind"></i> <span>AQI: ${aqi.current.us_aqi}</span>`;
-     document.getElementById('weather-widget').style.display = 'inline-flex';
-}
-
-navigator.geolocation.getCurrentPosition(pos => fetchWeatherData(pos.coords.latitude, pos.coords.longitude), () => fetchWeatherData(DELHI_COORDS.lat, DELHI_COORDS.lon));
+// --- AUTH & INITIALIZATION ---
+signInAnonymously(auth);
 
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUser = user;
-        onSnapshot(doc(db, "website_state", "global_theme"), (doc) => {
-            if (doc.exists()) { applyTheme(doc.data()); updateUI(doc.data()); }
-        });
-
-        onSnapshot(collection(db, "messages"), (snapshot) => {
-            const grid = document.getElementById('messagesGrid'); grid.innerHTML = '';
-            snapshot.forEach((doc) => {
-                const msg = doc.data();
-                const card = document.createElement('div'); card.className = 'message-card';
-                card.innerHTML = `<strong>${msg.name || 'Anonymous'}</strong><p>${msg.text}</p>`;
-                grid.appendChild(card);
-            });
-        });
-        
-        onSnapshot(collection(db, "blogs"), (snapshot) => {
-            const blogGrid = document.getElementById('blog-feed'); blogGrid.innerHTML = '';
-            snapshot.forEach((docSnapshot) => {
-                const post = docSnapshot.data(); loadedPosts[docSnapshot.id] = post;
-                const card = document.createElement('div'); card.className = 'blog-card';
-                card.innerHTML = `<div class="blog-content" onclick="window.openReadPost('${docSnapshot.id}')"><h3>${post.title}</h3><p>${stripHtml(post.content)}</p></div>`;
-                blogGrid.appendChild(card);
-            });
-        });
+        initListeners();
+        incrementViewCount();
     }
 });
 
-// Animations & Modals
-gsap.registerPlugin(ScrollTrigger);
-const waModal = document.getElementById('contactModal');
-document.getElementById('whatsappBtn').onclick = () => waModal.style.display = "flex";
-document.getElementById('closeModal').onclick = () => waModal.style.display = "none";
+function initListeners() {
+    // Theme Listener
+    onSnapshot(doc(db, "website_state", "global_theme"), (doc) => {
+        if (doc.exists()) { applyTheme(doc.data()); updateUI(doc.data()); currentTheme = doc.data(); }
+    });
 
-window.openReadPost = function(postId) {
-    const post = loadedPosts[postId];
-    document.getElementById('readModalBody').innerHTML = `<h1>${post.title}</h1><div>${post.content}</div>`;
-    document.getElementById('readPostModal').style.display = "flex";
-};
+    // Chat/Messages Listener (Hero Bubble logic restored)
+    onSnapshot(collection(db, "messages"), (snapshot) => {
+        const grid = document.getElementById('messagesGrid');
+        const heroContainer = document.getElementById('heroMessages');
+        grid.innerHTML = '';
+        if(heroContainer) heroContainer.innerHTML = '';
 
-// ... Remaining event listeners for theme picker, form submission, and like buttons ...
-// (Note: Keep all your existing event listeners and functions inside this file)
+        let messages = [];
+        snapshot.forEach(d => messages.push(d.data()));
+        messages.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
+        messages.slice(0, 20).forEach(msg => {
+            const card = document.createElement('div');
+            card.className = 'message-card';
+            card.innerHTML = `<strong>${msg.name || 'Anonymous'}</strong><p>${msg.text}</p>`;
+            grid.appendChild(card);
+        });
+
+        // Restore Draggable Bubbles
+        messages.slice(0, 8).forEach((msg, i) => {
+            if(!heroContainer) return;
+            const bubble = document.createElement('div');
+            bubble.className = 'hero-msg-bubble';
+            bubble.style.top = `${Math.random() * 70}%`;
+            bubble.style.left = `${Math.random() * 70}%`;
+            bubble.innerHTML = `<strong>${msg.name}</strong><p>${msg.text}</p>`;
+            heroContainer.appendChild(bubble);
+            if(window.Draggable) Draggable.create(bubble, { bounds: "body", inertia: true });
+        });
+    });
+
+    // Blog Feed Listener (Restored Voting & Preview)
+    onSnapshot(collection(db, "blogs"), (snapshot) => {
+        const blogGrid = document.getElementById('blog-feed');
+        blogGrid.innerHTML = '';
+        snapshot.forEach((docSnap) => {
+            const post = docSnap.data();
+            loadedPosts[docSnap.id] = post;
+            const card = document.createElement('div');
+            card.className = 'blog-card';
+            card.innerHTML = `
+                <div class="vote-section">
+                    <button class="vote-btn" onclick="handleVote('${docSnap.id}', true)"><i class="fas fa-arrow-up"></i></button>
+                    <span class="vote-count">${post.score || 0}</span>
+                    <button class="vote-btn" onclick="handleVote('${docSnap.id}', false)"><i class="fas fa-arrow-down"></i></button>
+                </div>
+                <div class="blog-content" onclick="openReadPost('${docSnap.id}')">
+                    <h3>${post.title}</h3>
+                    <p class="blog-text-preview">${stripHtml(post.content)}</p>
+                </div>`;
+            blogGrid.appendChild(card);
+        });
+    });
+
+    // Stats Listeners
+    onSnapshot(doc(db, "stats", "likes"), (d) => document.getElementById('likeCount').innerText = d.data()?.count || 0);
+    onSnapshot(doc(db, "stats", "global_views"), (d) => document.getElementById('globalViewCount').innerText = d.data()?.count || 0);
+}
+
+// --- CORE FUNCTIONS ---
 function applyTheme(theme) {
     root.style.setProperty('--primary', theme.primary);
     root.style.setProperty('--primary-dim', theme.primary + '1A');
     root.style.setProperty('--secondary', theme.secondary);
     root.style.setProperty('--font-main', theme.font);
     if(theme.mode && themeModes[theme.mode]) {
-        const modeVars = themeModes[theme.mode];
-        for (const [key, value] of Object.entries(modeVars)) { root.style.setProperty(key, value); }
+        const vars = themeModes[theme.mode];
+        Object.keys(vars).forEach(k => root.style.setProperty(k, vars[k]));
     }
 }
+
+function stripHtml(html) {
+    let t = document.createElement("DIV"); t.innerHTML = html;
+    return t.textContent || t.innerText || "";
+}
+
+// Global View Counter Restored
+async function incrementViewCount() {
+    const today = new Date().toISOString().split('T')[0];
+    const dailyRef = doc(db, "page_views", today);
+    const globalRef = doc(db, "stats", "global_views");
+    
+    runTransaction(db, async (transaction) => {
+        const dDoc = await transaction.get(dailyRef);
+        const gDoc = await transaction.get(globalRef);
+        transaction.set(dailyRef, { views: (dDoc.exists() ? dDoc.data().views : 0) + 1 }, { merge: true });
+        transaction.set(globalRef, { count: (gDoc.exists() ? gDoc.data().count : 0) + 1 }, { merge: true });
+    });
+}
+
+// --- INTERACTIVE LOGIC (Exposed to Window) ---
+window.handleVote = async (id, isUp) => {
+    await updateDoc(doc(db, "blogs", id), { score: increment(isUp ? 1 : -1) });
+};
+
+window.openReadPost = (id) => {
+    const post = loadedPosts[id];
+    document.getElementById('readModalBody').innerHTML = `<h1>${post.title}</h1><div>${post.content}</div>`;
+    document.getElementById('readPostModal').style.display = "flex";
+};
+
+// --- UI EVENT LISTENERS ---
+document.getElementById('themeToggleBtn').onclick = () => document.getElementById('themePanel').classList.toggle('active');
+document.getElementById('closeThemePanel').onclick = () => document.getElementById('themePanel').classList.remove('active');
+
+// Cloud Save Restored
+document.getElementById('saveThemeBtn').onclick = async () => {
+    const btn = document.getElementById('saveThemeBtn');
+    btn.innerText = "Saving...";
+    await setDoc(doc(db, "website_state", "global_theme"), currentTheme);
+    btn.innerText = "Saved Global!";
+    setTimeout(() => btn.innerText = "Save to Cloud", 2000);
+};
+
+// Chat Post Restored
+document.getElementById('postMsgBtn').onclick = async () => {
+    const name = document.getElementById('msgName').value || "Anonymous";
+    const text = document.getElementById('msgText').value;
+    if(!text) return alert("Type something!");
+    await addDoc(collection(db, "messages"), { name, text, timestamp: serverTimestamp() });
+    document.getElementById('msgText').value = '';
+};
+
+// Weather Logic Restored
+const DELHI_COORDS = { lat: 28.6139, lon: 77.2090 };
+async function fetchWeather(lat, lon) {
+    try {
+        const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`).then(r => r.json());
+        const a = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&timezone=auto`).then(r => r.json());
+        document.getElementById('weatherTemp').innerText = `${Math.round(w.current.temperature_2m)}°C`;
+        document.getElementById('weatherAQI').innerText = `AQI: ${a.current.us_aqi}`;
+        document.getElementById('weather-widget').style.display = 'inline-flex';
+    } catch (e) { console.log("Weather offline"); }
+}
+navigator.geolocation.getCurrentPosition(p => fetchWeather(p.coords.latitude, p.coords.longitude), () => fetchWeather(DELHI_COORDS.lat, DELHI_COORDS.lon));
+
+// Quill Init
+var quill = new Quill('#editor-container', { theme: 'snow' });
+
+// Blog Publish Restored
+document.getElementById('submitPostBtn').onclick = async () => {
+    const pass = document.getElementById('blogPassword').value;
+    if(pass !== "220919") return alert("Wrong Admin Password!");
+    
+    await addDoc(collection(db, "blogs"), {
+        title: document.getElementById('blogTitle').value,
+        content: quill.root.innerHTML,
+        score: 0,
+        timestamp: serverTimestamp()
+    });
+    alert("Published!");
+    document.getElementById('blogModal').style.display = "none";
+};
+
+// Theme Color Pickers Restored
+document.querySelectorAll('.color-circle').forEach(c => {
+    c.onclick = () => {
+        const type = c.parentElement.id === 'primaryColors' ? 'primary' : 'secondary';
+        currentTheme[type] = c.dataset.color;
+        applyTheme(currentTheme);
+    }
+});
+
+// Animations
+gsap.from("#header", { y: -100, duration: 1, ease: "power4.out" });
