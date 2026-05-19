@@ -257,6 +257,46 @@ const closeContactModal = document.getElementById('closeModal');
 if (whatsappBtn) whatsappBtn.onclick = () => contactModal.style.display = "flex";
 if (closeContactModal) closeContactModal.onclick = () => contactModal.style.display = "none";
 
+// --- Main Contact Form Logic (Hooked to your WhatsApp) ---
+const contactForm = document.getElementById("contactForm");
+if (contactForm) {
+    contactForm.addEventListener("submit", function (e) {
+        e.preventDefault(); // Stop page reload
+        
+        const btn = this.querySelector('button');
+        const originalText = btn.innerText;
+        btn.innerText = "Processing...";
+        btn.disabled = true; // Prevent double clicks
+        
+        setTimeout(() => {
+            // Grab values from your specific form fields
+            const name = this.querySelector('[name="name"]').value;
+            const subject = this.querySelector('[name="subject"]').value;
+            const message = this.querySelector('[name="message"]').value;
+            
+            // Format the message for WhatsApp
+            const waText = encodeURIComponent(`Hi Akash, I am ${name}. Subject: ${subject}.\n\nRequirements:\n${message}`);
+            
+            // Open WhatsApp with your specific number
+            window.open(`https://wa.me/918112712037?text=${waText}`, '_blank');
+            
+            // UI Success State
+            btn.innerText = "Connection Initiated!";
+            btn.style.background = "#25D366";
+            btn.style.color = "white";
+            
+            // Reset form and button after 3 seconds
+            setTimeout(() => {
+                this.reset();
+                btn.innerText = originalText;
+                btn.style.background = "";
+                btn.style.color = "";
+                btn.disabled = false;
+            }, 3000);
+        }, 800);
+    });
+}
+
 // --- Theme Panel Toggle Logic ---
 const themeBtn = document.getElementById('themeToggleBtn');
 const themePanel = document.getElementById('themePanel');
@@ -273,3 +313,28 @@ if (closeThemeBtn) closeThemeBtn.onclick = () => themePanel.classList.remove('ac
 window.addEventListener('click', (e) => { 
     if (e.target == contactModal) contactModal.style.display = "none"; 
 });
+
+// --- Like Button Logic ---
+const likeBtn = document.getElementById('likeBtn');
+if (likeBtn) {
+    likeBtn.addEventListener('click', () => {
+        if(!currentUser) return; // Prevent liking if Firebase hasn't connected yet
+        
+        // Trigger CSS Animation
+        likeBtn.classList.add('liked');
+        setTimeout(() => likeBtn.classList.remove('liked'), 400);
+        
+        // Update Database
+        const likeDocRef = doc(db, "stats", "likes");
+        
+        runTransaction(db, async (transaction) => {
+            const sfDoc = await transaction.get(likeDocRef);
+            if (!sfDoc.exists()) {
+                transaction.set(likeDocRef, { count: 1 });
+            } else {
+                const newCount = (sfDoc.data().count || 0) + 1;
+                transaction.update(likeDocRef, { count: newCount });
+            }
+        }).catch(e => console.error("Like failed", e));
+    });
+}
