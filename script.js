@@ -248,3 +248,28 @@ function stripHtml(html) {
 }
 
 gsap.from("#header", { y: -100, duration: 1, ease: "bounce" });
+
+// --- WhatsApp Modal Logic ---
+const contactModal = document.getElementById('contactModal');
+const whatsappBtn = document.getElementById('whatsappBtn');
+const closeContactModal = document.getElementById('closeModal');
+
+if (whatsappBtn) whatsappBtn.onclick = () => contactModal.style.display = "flex";
+if (closeContactModal) closeContactModal.onclick = () => contactModal.style.display = "none";
+
+// --- Theme Panel Toggle Logic ---
+const themeBtn = document.getElementById('themeToggleBtn');
+const themePanel = document.getElementById('themePanel');
+const closeThemeBtn = document.getElementById('closeThemePanel');
+const mobileThemeBtn = document.getElementById('mobileThemeBtn');
+
+const togglePanel = () => themePanel.classList.toggle('active');
+
+if (themeBtn) themeBtn.onclick = togglePanel;
+if (mobileThemeBtn) mobileThemeBtn.onclick = togglePanel; 
+if (closeThemeBtn) closeThemeBtn.onclick = () => themePanel.classList.remove('active');
+
+// Close modal if clicking outside the modal content
+window.addEventListener('click', (e) => { 
+    if (e.target == contactModal) contactModal.style.display = "none"; 
+});
