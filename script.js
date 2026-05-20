@@ -85,21 +85,51 @@ function initListeners() {
     onSnapshot(collection(db, "blogs"), (snapshot) => {
         const blogGrid = document.getElementById('blog-feed');
         if (blogGrid) blogGrid.innerHTML = '';
+        
+        let posts = [];
         snapshot.forEach((docSnap) => {
-            const post = docSnap.data();
-            loadedPosts[docSnap.id] = post;
+            posts.push({ id: docSnap.id, ...docSnap.data() });
+            loadedPosts[docSnap.id] = docSnap.data();
+        });
+
+        // Sort by newest first
+        posts.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+        // Limit to latest 10 posts like Chandan
+        posts = posts.slice(0, 10);
+
+        if(posts.length === 0) {
+            blogGrid.innerHTML = '<div style="text-align:center; width:100%; color:var(--text-gray);">No insights pushed yet.</div>';
+            return;
+        }
+
+        posts.forEach((post) => {
             const card = document.createElement('div');
             card.className = 'blog-card';
+            
+            const score = post.score || 0;
+            const date = post.timestamp ? new Date(post.timestamp.toDate()).toLocaleDateString() : 'Just now';
+            const subTitle = post.subtitle ? `<div class="blog-subtitle">${post.subtitle}</div>` : '';
+            const imageSection = (post.image && post.image.trim() !== '') 
+            ? `<img src="${post.image.trim()}" class="blog-image" alt="Insight Visual" onerror="this.style.display='none'">` 
+            : '';
+            const previewText = stripHtml(post.content);
+
             card.innerHTML = `
                 <div class="vote-section">
-                    <button class="vote-btn" data-id="${docSnap.id}" data-up="true"><i class="fas fa-arrow-up"></i></button>
-                    <span class="vote-count">${post.score || 0}</span>
-                    <button class="vote-btn" data-id="${docSnap.id}" data-up="false"><i class="fas fa-arrow-down"></i></button>
+                    <button class="vote-btn" data-id="${post.id}" data-up="true"><i class="fas fa-arrow-up"></i></button>
+                    <span class="vote-count">${score}</span>
+                    <button class="vote-btn" data-id="${post.id}" data-up="false"><i class="fas fa-arrow-down"></i></button>
                 </div>
-                <div class="blog-content" onclick="openReadPost('${docSnap.id}')">
-                    <h3>${post.title}</h3>
-                    <p class="blog-text-preview">${stripHtml(post.content)}</p>
-                </div>`;
+                <div class="blog-content" onclick="openReadPost('${post.id}')">
+                    <div class="blog-meta">
+                        <span><i class="far fa-clock"></i> ${date}</span>
+                    </div>
+                    <h3 class="blog-title">${post.title}</h3>
+                    ${subTitle}
+                    ${imageSection}
+                    <div class="blog-text-preview">${previewText}</div>
+                </div>
+            `;
             if (blogGrid) blogGrid.appendChild(card);
         });
         
@@ -118,6 +148,14 @@ function initListeners() {
     onSnapshot(doc(db, "stats", "global_views"), (d) => {
         const el = document.getElementById('globalViewCount');
         if (el) el.innerText = d.data()?.count || 0;
+    });
+    // 5. Daily View Counter Listener
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayDocRef = doc(db, "page_views", todayStr);
+    onSnapshot(todayDocRef, (docSnapshot) => {
+        const val = docSnapshot.exists() ? docSnapshot.data().views : 0;
+        const el = document.getElementById('todayViewCount');
+        if(el) el.innerText = val;
     });
 }
 
@@ -164,6 +202,23 @@ window.openReadPost = (id) => {
     if (body) body.innerHTML = `<h1>${post.title}</h1><div>${post.content}</div>`;
     document.getElementById('readPostModal').style.display = "flex";
 };
+
+// --- Close Read Post Modal Logic ---
+const closeReadModalBtn = document.getElementById('closeReadModal');
+const readPostModal = document.getElementById('readPostModal');
+
+if (closeReadModalBtn) {
+    closeReadModalBtn.onclick = () => {
+        readPostModal.style.display = "none";
+    };
+}
+
+// Update the global click listener to close BOTH modals if you click outside of them
+window.addEventListener('click', (e) => { 
+    const contactModal = document.getElementById('contactModal');
+    if (e.target == contactModal) contactModal.style.display = "none"; 
+    if (e.target == readPostModal) readPostModal.style.display = "none"; 
+});
 
 document.getElementById('saveThemeBtn').onclick = async () => {
     const btn = document.getElementById('saveThemeBtn');
@@ -243,8 +298,10 @@ async function incrementViewCount() {
 }
 
 function stripHtml(html) {
-    let t = document.createElement("DIV"); t.innerHTML = html;
-    return t.textContent || t.innerText || "";
+    let t = document.createElement("DIV"); 
+    // Adds a space before closing tags so words don't merge
+    t.innerHTML = html.replace(/<\/(p|div|h\d|li)>/gi, ' </$1>'); 
+    return t.textContent.trim() || t.innerText.trim() || "";
 }
 
 gsap.from("#header", { y: -100, duration: 1, ease: "bounce" });
