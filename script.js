@@ -4,13 +4,13 @@ import { getFirestore, doc, setDoc, addDoc, updateDoc, collection, onSnapshot, s
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyDnSz2NJQZovT3WKjyak9IcVlfYbQBmlVM",
-    authDomain: "chandan-saroj-portfolio.firebaseapp.com",
-    projectId: "chandan-saroj-portfolio",
-    storageBucket: "chandan-saroj-portfolio.firebasestorage.app",
-    messagingSenderId: "673240575610",
-    appId: "1:673240575610:web:c199ae38e28a41c33715c3",
-    measurementId: "G-WVQXG2QM1T"
+    apiKey: "AIzaSyAe2A84FEsPGhPoRWMhjtbT4h2En0jjANg",
+    authDomain: "akashyadavonlineazm.firebaseapp.com",
+    projectId: "akashyadavonlineazm",
+    storageBucket: "akashyadavonlineazm.firebasestorage.app",
+    messagingSenderId: "657835731858",
+    appId: "1:657835731858:web:5379caadc2a01d8ec9af4b",
+    measurementId: "G-S4T7QJ3ZY9"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -94,7 +94,7 @@ function initListeners() {
 
         // Sort by newest first
         posts.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-        // Limit to latest 10 posts like Chandan
+        // Limit to latest 10 posts
         posts = posts.slice(0, 10);
 
         if(posts.length === 0) {
@@ -125,8 +125,8 @@ function initListeners() {
                         <span><i class="far fa-clock"></i> ${date}</span>
                     </div>
                     <h3 class="blog-title">${post.title}</h3>
-                    ${subTitle}
-                    ${imageSection}
+                    ${subTitle} <!-- Must be above image -->
+                    ${imageSection} <!-- Must be below subtitle -->
                     <div class="blog-text-preview">${previewText}</div>
                 </div>
             `;
@@ -149,7 +149,7 @@ function initListeners() {
         const el = document.getElementById('globalViewCount');
         if (el) el.innerText = d.data()?.count || 0;
     });
-    // 5. Daily View Counter Listener
+    // Daily View Counter Listener
     const todayStr = new Date().toISOString().split('T')[0];
     const todayDocRef = doc(db, "page_views", todayStr);
     onSnapshot(todayDocRef, (docSnapshot) => {
@@ -247,16 +247,25 @@ document.getElementById('postMsgBtn').onclick = async () => {
 var quill = new Quill('#editor-container', { theme: 'snow' });
 document.getElementById('submitPostBtn').onclick = async () => {
     if(document.getElementById('blogPassword').value !== "220919") return alert("Denied.");
+    
     await addDoc(collection(db, "blogs"), {
         title: document.getElementById('blogTitle').value,
+        subtitle: document.getElementById('blogSubtitle').value,
+        image: document.getElementById('blogImage').value,
         content: quill.root.innerHTML,
         score: 0,
         timestamp: serverTimestamp()
     });
+    
+    // Clear the form fields after publishing
     document.getElementById('blogTitle').value = '';
+    document.getElementById('blogSubtitle').value = '';
+    document.getElementById('blogImage').value = '';
     quill.setContents([]);
     document.getElementById('blogModal').style.display = "none";
 };
+
+// --- FIXED THEME CONTROLS ---
 
 document.querySelectorAll('.color-circle').forEach(c => {
     c.onclick = () => {
@@ -276,12 +285,29 @@ document.querySelectorAll('.mode-btn').forEach(b => {
 });
 
 document.querySelectorAll('.font-btn').forEach(f => {
+    // FIX: Ignore clicks if the button is actually a visual mode button
+    if(f.classList.contains('mode-btn')) return;
+    
     f.onclick = () => {
         currentTheme.font = f.dataset.font;
         applyTheme(currentTheme);
         updateThemeUI(currentTheme);
     }
 });
+
+// FIX: Added Reset Button Listener
+const resetBtn = document.getElementById('resetThemeBtn');
+if (resetBtn) {
+    resetBtn.onclick = () => {
+        currentTheme = { primary: '#00ff88', secondary: '#ff5f00', font: "'Inter', sans-serif", mode: 'dark' };
+        applyTheme(currentTheme);
+        updateThemeUI(currentTheme);
+        
+        const originalText = resetBtn.innerText;
+        resetBtn.innerText = "Restored!";
+        setTimeout(() => resetBtn.innerText = originalText, 1500);
+    };
+}
 
 async function incrementViewCount() {
     const today = new Date().toISOString().split('T')[0];
@@ -299,7 +325,6 @@ async function incrementViewCount() {
 
 function stripHtml(html) {
     let t = document.createElement("DIV"); 
-    // Adds a space before closing tags so words don't merge
     t.innerHTML = html.replace(/<\/(p|div|h\d|li)>/gi, ' </$1>'); 
     return t.textContent.trim() || t.innerText.trim() || "";
 }
@@ -314,35 +339,29 @@ const closeContactModal = document.getElementById('closeModal');
 if (whatsappBtn) whatsappBtn.onclick = () => contactModal.style.display = "flex";
 if (closeContactModal) closeContactModal.onclick = () => contactModal.style.display = "none";
 
-// --- Main Contact Form Logic (Hooked to your WhatsApp) ---
+// --- Main Contact Form Logic ---
 const contactForm = document.getElementById("contactForm");
 if (contactForm) {
     contactForm.addEventListener("submit", function (e) {
-        e.preventDefault(); // Stop page reload
+        e.preventDefault(); 
         
         const btn = this.querySelector('button');
         const originalText = btn.innerText;
         btn.innerText = "Processing...";
-        btn.disabled = true; // Prevent double clicks
+        btn.disabled = true; 
         
         setTimeout(() => {
-            // Grab values from your specific form fields
             const name = this.querySelector('[name="name"]').value;
             const subject = this.querySelector('[name="subject"]').value;
             const message = this.querySelector('[name="message"]').value;
             
-            // Format the message for WhatsApp
             const waText = encodeURIComponent(`Hi Akash, I am ${name}. Subject: ${subject}.\n\nRequirements:\n${message}`);
-            
-            // Open WhatsApp with your specific number
             window.open(`https://wa.me/918112712037?text=${waText}`, '_blank');
             
-            // UI Success State
             btn.innerText = "Connection Initiated!";
             btn.style.background = "#25D366";
             btn.style.color = "white";
             
-            // Reset form and button after 3 seconds
             setTimeout(() => {
                 this.reset();
                 btn.innerText = originalText;
@@ -366,22 +385,15 @@ if (themeBtn) themeBtn.onclick = togglePanel;
 if (mobileThemeBtn) mobileThemeBtn.onclick = togglePanel; 
 if (closeThemeBtn) closeThemeBtn.onclick = () => themePanel.classList.remove('active');
 
-// Close modal if clicking outside the modal content
-window.addEventListener('click', (e) => { 
-    if (e.target == contactModal) contactModal.style.display = "none"; 
-});
-
 // --- Like Button Logic ---
 const likeBtn = document.getElementById('likeBtn');
 if (likeBtn) {
     likeBtn.addEventListener('click', () => {
-        if(!currentUser) return; // Prevent liking if Firebase hasn't connected yet
+        if(!currentUser) return; 
         
-        // Trigger CSS Animation
         likeBtn.classList.add('liked');
         setTimeout(() => likeBtn.classList.remove('liked'), 400);
         
-        // Update Database
         const likeDocRef = doc(db, "stats", "likes");
         
         runTransaction(db, async (transaction) => {
