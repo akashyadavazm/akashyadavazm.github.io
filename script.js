@@ -355,7 +355,7 @@ if (contactForm) {
             const subject = this.querySelector('[name="subject"]').value;
             const message = this.querySelector('[name="message"]').value;
             
-            const waText = encodeURIComponent(`Hi Akash, I am ${name}. Subject: ${subject}.\n\nRequirements:\n${message}`);
+            const waText = encodeURIComponent(`Hi Akash, I am ${name}. Inquiry: ${subject}.\n\nProject Details:\n${message}`);
             window.open(`https://wa.me/918112712037?text=${waText}`, '_blank');
             
             btn.innerText = "Connection Initiated!";
